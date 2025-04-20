@@ -301,6 +301,53 @@ create_alias() {
     # Add the alias
     echo "$alias_name:$profile_name" >> "$ALIASES_FILE"
     echo -e "${GREEN}Alias '$alias_name' created for profile '$profile_name'${NC}"
+
+    # Create command alias if user wants
+    read -p "Would you like to create a shell alias for this connection? (y/n): " create_shell_alias
+    if [[ "$create_shell_alias" == "y" || "$create_shell_alias" == "Y" ]]; then
+        local shell_rc_file=""
+
+        # Detect user's shell and corresponding rc file
+        if [ -n "$BASH_VERSION" ]; then
+            if [ -f "$HOME/.bashrc" ]; then
+                shell_rc_file="$HOME/.bashrc"
+            elif [ -f "$HOME/.bash_profile" ]; then
+                shell_rc_file="$HOME/.bash_profile"
+            fi
+        elif [ -n "$ZSH_VERSION" ]; then
+            shell_rc_file="$HOME/.zshrc"
+        else
+            # Default to .profile if can't determine shell
+            if [ -f "$HOME/.profile" ]; then
+                shell_rc_file="$HOME/.profile"
+            else
+                shell_rc_file="$HOME/.bashrc"
+            fi
+        fi
+
+        if [ -z "$shell_rc_file" ]; then
+            echo -e "${RED}Could not determine shell configuration file.${NC}"
+            return 1
+        fi
+
+        # Check if alias already exists in shell config
+        if grep -q "alias $alias_name=" "$shell_rc_file"; then
+            echo -e "${YELLOW}Shell alias '$alias_name' already exists in $shell_rc_file${NC}"
+            read -p "Do you want to overwrite it? (y/n): " overwrite_alias
+            if [[ "$overwrite_alias" != "y" && "$overwrite_alias" != "Y" ]]; then
+                return 0
+            fi
+            # Remove existing alias
+            sed -i "/alias $alias_name=/d" "$shell_rc_file"
+        fi
+
+        # Add alias to shell config
+        echo "# SSHBuddy alias added on $(date)" >> "$shell_rc_file"
+        echo "alias $alias_name='sshbuddy $profile_name'" >> "$shell_rc_file"
+
+        echo -e "${GREEN}Shell alias '$alias_name' added to $shell_rc_file${NC}"
+        echo -e "${YELLOW}To use this alias, restart your shell or run: source $shell_rc_file${NC}"
+    fi
 }
 
 # List all aliases
@@ -799,6 +846,121 @@ verify_system_requirements() {
     return $requirements_met
 }
 
+# Check if profile exists
+profile_exists() {
+    local profile_name="$1"
+    grep -q "^$profile_name:" "$CONFIG_FILE"
+    return $?
+}
+
+# Check if alias exists
+alias_exists() {
+    local alias_name="$1"
+    [ -f "$ALIASES_FILE" ] && grep -q "^$alias_name:" "$ALIASES_FILE"
+    return $?
+}
+
+# Get profile name from alias
+get_profile_from_alias() {
+    local alias_name="$1"
+    if [ -f "$ALIASES_FILE" ]; then
+        grep "^$alias_name:" "$ALIASES_FILE" | cut -d: -f2
+    fi
+}
+
+# Show profile info
+show_profile_info() {
+    local profile_name="$1"
+
+    # Check alias first
+    local alias_target=""
+    if alias_exists "$profile_name"; then
+        alias_target=$(get_profile_from_alias "$profile_name")
+        if [ -n "$alias_target" ]; then
+            echo -e "${YELLOW}Alias '$profile_name' points to profile '$alias_target'${NC}"
+            profile_name="$alias_target"
+        fi
+    fi
+
+    # Find the profile
+    local profile=$(grep "^$profile_name:" "$CONFIG_FILE")
+
+    if [ -z "$profile" ]; then
+        echo -e "${RED}Profile '$profile_name' not found.${NC}"
+        return 1
+    fi
+
+    # Extract connection details
+    IFS=: read -r name host user port identity options <<< "$profile"
+
+    echo -e "${BLUE}Profile information:${NC}"
+    echo -e "${YELLOW}-------------------------------------${NC}"
+    echo -e "${CYAN}Name:${NC}\t\t$name"
+    echo -e "${CYAN}Hostname:${NC}\t$host"
+    echo -e "${CYAN}Username:${NC}\t$user"
+    echo -e "${CYAN}Port:${NC}\t\t$port"
+    echo -e "${CYAN}Identity:${NC}\t${identity:-<default>}"
+    echo -e "${CYAN}Options:${NC}\t${options:-<none>}"
+
+    # Check if profile is in SSH config
+    if grep -q "^Host $name$" "$SSH_CONFIG_FILE"; then
+        echo -e "${CYAN}SSH Config:${NC}\tYes"
+    else
+        echo -e "${CYAN}SSH Config:${NC}\tNo"
+    fi
+
+    # Check if there are aliases for this profile
+    if [ -f "$ALIASES_FILE" ]; then
+        local aliases=$(grep -l ":$name$" "$ALIASES_FILE" | tr '\n' ' ')
+        if [ -n "$aliases" ]; then
+            echo -e "${CYAN}Aliases:${NC}\t$aliases"
+        fi
+    fi
+}
+
+# Process profile command
+process_profile_command() {
+    local profile_name="$1"
+    local action="$2"
+
+    # Default action is connect if no action specified
+    if [ -z "$action" ]; then
+        connect_profile "$profile_name"
+        return
+    fi
+
+    case "$action" in
+        "info")
+            show_profile_info "$profile_name"
+            ;;
+        "edit")
+            edit_profile "$profile_name"
+            ;;
+        "remove")
+            remove_profile "$profile_name"
+            ;;
+        "copy-id")
+            copy_ssh_id "$profile_name"
+            ;;
+        "test")
+            test_connection "$profile_name"
+            ;;
+        "alias")
+            local alias_name="$3"
+            if [ -z "$alias_name" ]; then
+                echo -e "${RED}Alias name is required.${NC}"
+                echo -e "Usage: ${CYAN}sshbuddy <profile-name> alias <alias-name>${NC}"
+                return 1
+            fi
+            create_alias "$alias_name" "$profile_name"
+            ;;
+        *)
+            echo -e "${RED}Unknown action: $action${NC}"
+            echo -e "Available actions: info, edit, remove, copy-id, test, alias"
+            ;;
+    esac
+}
+
 # Main function
 main() {
     # Ensure configuration directory exists
@@ -811,6 +973,13 @@ main() {
     local command="$1"
     shift
     
+    # Check if the command is a profile or alias name first
+    if profile_exists "$command" || alias_exists "$command"; then
+        process_profile_command "$command" "$@"
+        return
+    fi
+
+    # Otherwise, process as a regular command
     case "$command" in
         "add")
             add_profile
@@ -861,8 +1030,8 @@ main() {
             if [ -z "$command" ]; then
                 show_help
             else
-                echo -e "${RED}Unknown command: $command${NC}"
-                show_help
+                echo -e "${RED}Unknown command or profile: $command${NC}"
+                echo -e "${YELLOW}Use 'sshbuddy list' to see available profiles or 'sshbuddy help' for commands.${NC}"
             fi
             ;;
     esac

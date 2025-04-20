@@ -2,7 +2,7 @@
 
 A comprehensive SSH management tool for Linux systems.
 
-**Author:** Arash  
+**Author:** Arash Abolhasani  
 **Version:** 1.0.0
 
 ## Overview
@@ -55,29 +55,38 @@ sshbuddy add
 # List all configured profiles
 sshbuddy list
 
-# Connect to a profile
+# Connect to a profile (two equivalent ways)
 sshbuddy connect my-server
+sshbuddy my-server
 
-# Copy SSH key to a server
+# Copy SSH key to a server (two equivalent ways)
 sshbuddy copy-id my-server
+sshbuddy my-server copy-id
 
 # Generate a new SSH key
 sshbuddy generate-key
 
-# Create an alias for a profile
+# Create an alias for a profile (two equivalent ways)
 sshbuddy alias ms my-server
+sshbuddy my-server alias ms
 
 # List all aliases
 sshbuddy aliases
 
-# Remove a profile
+# Show detailed information about a profile
+sshbuddy my-server info
+
+# Remove a profile (two equivalent ways)
 sshbuddy remove my-server
+sshbuddy my-server remove
 
-# Edit a profile
+# Edit a profile (two equivalent ways)
 sshbuddy edit my-server
+sshbuddy my-server edit
 
-# Test connection to a profile
+# Test connection to a profile (two equivalent ways)
 sshbuddy test my-server
+sshbuddy my-server test
 
 # View connection history
 sshbuddy history
@@ -91,6 +100,46 @@ sshbuddy import
 # Show version information
 sshbuddy version
 ```
+
+### Profile-Centric Commands
+
+SSHBuddy now supports a more intuitive usage pattern where you can specify the profile name first, followed by the action:
+
+```bash
+# Connect to a profile (default action when profile is specified alone)
+sshbuddy my-server
+
+# Get detailed information about a profile
+sshbuddy my-server info
+
+# Edit a profile
+sshbuddy my-server edit
+
+# Remove a profile
+sshbuddy my-server remove
+
+# Copy SSH key to the server
+sshbuddy my-server copy-id
+
+# Test connection to the server
+sshbuddy my-server test
+
+# Create an alias for the profile
+sshbuddy my-server alias ms
+```
+
+### Shell Aliases
+
+When creating an alias with `sshbuddy alias` or `sshbuddy <profile> alias`, you'll be asked if you want to create a shell alias that can be used directly from your terminal:
+
+```bash
+# After creating an alias 'ms' for 'my-server'
+# You can connect to the server by simply typing:
+ms
+```
+
+This adds the alias to your shell configuration file (`.bashrc`, `.zshrc`, etc.).
+
 
 ## Configuration
 
